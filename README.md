@@ -46,6 +46,7 @@ Direct Download URLs:
 
 
 ## License
+
 Database and Contents Copyright (c) [MaxMind](https://www.maxmind.com/), Inc.
 
 Creative Commons Public Licenses
