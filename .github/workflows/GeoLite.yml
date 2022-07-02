@@ -1,0 +1,116 @@
+name: Publish GeoLite
+
+on:
+  repository_dispatch:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+  schedule:
+    - cron: 0 1 */3 * *
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+    - name: Init Env
+      run: |
+        mkdir -p upload
+        echo "TAG_NAME=$(date +"%Y.%m.%d")" >> $GITHUB_ENV
+
+    - name: Download GeoLite.mmdb
+      run: |
+        wget -nv -O- "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-ASN&license_key=${{ secrets.TOKEN_GEOIP }}&suffix=tar.gz" | tar zxv
+        wget -nv -O- "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=${{ secrets.TOKEN_GEOIP }}&suffix=tar.gz" | tar zxv
+        wget -nv -O- "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=${{ secrets.TOKEN_GEOIP }}&suffix=tar.gz" | tar zxv
+        cp -v GeoLite*/*.mmdb upload
+
+    - name: Download GeoLite.csv
+      run: |
+        wget -nv -O GeoLite2-Country-CSV.zip "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country-CSV&license_key=${{ secrets.TOKEN_GEOIP }}&suffix=zip"
+        wget -nv -O GeoLite2-City-CSV.zip "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City-CSV&license_key=${{ secrets.TOKEN_GEOIP }}&suffix=zip"
+
+    - name: Download IP2Location
+      run: |
+        wget -nv -O IP2LOCATION-LITE-DB11.IPV6.BIN.zip "https://www.ip2location.com/download/?token=${{ secrets.TOKEN_IP2LOCATION }}&file=DB11LITEBINIPV6"
+        wget -nv -O IP2LOCATION-LITE-ASN.IPV6.CSV.zip "https://www.ip2location.com/download/?token=${{ secrets.TOKEN_IP2LOCATION }}&file=DBASNLITEIPV6"
+        wget -nv -O IP2PROXY-LITE-PX11.BIN.zip "https://www.ip2location.com/download/?token=${{ secrets.TOKEN_IP2LOCATION }}&file=PX11LITEBIN"
+        unzip -o IP2LOCATION-LITE-DB11.IPV6.BIN.zip
+        unzip -o IP2LOCATION-LITE-ASN.IPV6.CSV.zip
+        unzip -o IP2PROXY-LITE-PX11.BIN.zip
+        cp -v IP2*.BIN IP2*.CSV upload
+
+    - name: Download QQWry.dat
+      run: |
+        wget -nv -O QQWry.dat "https://github.com/gai871013/ip-location/raw/master/src/QQWry.dat"
+        cp -v QQWry.dat upload/qqwry.dat
+        DAT1=$(curl https://github.com/gai871013/ip-location/commits/master/src/QQWry.dat | grep "Commits on" | head -n 1 | awk -F\> '{print $2}' | awk -F\< '{print $1}' | sed -e 's|Commits on ||')
+        DAT2=$(date -d "${DAT1}" +%Y%m%d)
+        echo "update QQWry.dat to $DAT1 ($DAT2)"
+        wget -nv -O qqwry.ipdb https://cdn.jsdelivr.net/npm/qqwry.ipdb/qqwry.ipdb
+        cp -v qqwry.ipdb upload
+        wget -nv -O ipipfree.ipdb https://github.com/gai871013/ip-location/raw/master/src/ipipfree.ipdb
+        cp -v ipipfree.ipdb upload
+
+    - name: Decompress Zips
+      uses: TonyBogdanov/zip@1.0
+      with:
+          args: unzip -qq GeoLite2-*-CSV.zip
+
+    - name: Copy GeoLite2.csv
+      run: |
+        cp -v GeoLite*/*.csv upload
+        echo "TAG_NAME=$(date +"%Y.%m.%d")" >> $GITHUB_ENV
+
+    - name: Upload to Releases
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ env.TAG_NAME }}
+        body: ${{ env.TAG_NAME }}
+        files: |
+          upload/*.mmdb
+          upload/GeoLite2-Country*.csv
+          upload/GeoLite2-City*.csv
+          upload/*.BIN
+          upload/*.CSV
+          upload/qqwry.dat
+          upload/*.ipdb
+
+    - name: Remove old Releases
+      uses: dev-drprasad/delete-older-releases@v0.2.0
+      with:
+        keep_latest: 2
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Push to "download" branch
+      run: |
+        sudo apt update
+        sudo apt install snapd
+        sudo snap install git-filter-repo --edge
+        cd upload
+        chmod 644 *
+        #gzip *PX11.BIN
+        #gzip *DB11.IPV6.BIN
+        gzip *
+        chmod 644 *
+        git init
+        git config --local user.name "${{ github.actor }}"
+        git config --local user.email "${{ github.actor }}@users.noreply.github.com"
+        git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+        git checkout -b download
+        #git filter-branch -f --index-filter 'git rm --cached --ignore-unmatch *.gz' HEAD~18..HEAD
+        touch .gitattributes
+        git lfs uninstall
+        #git lfs install
+        #git lfs track "*.gz"
+        git add .gitattributes
+        git add .
+        git commit -m "${{ env.TAG_NAME }}"
+        git push -f origin download
+
