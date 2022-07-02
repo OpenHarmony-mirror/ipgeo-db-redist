@@ -55,3 +55,6 @@ Creative Commons Public Licenses
 [MaxMind's GeoLite2](https://dev.maxmind.com/geoip/geoip2/geolite2/)
 
 [IP2Location](https://lite.ip2location.com/)
+
+[纯真数据库 IPIP.net 格式版](https://github.com/metowolf/qqwry.ipdb.git)
+
